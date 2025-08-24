@@ -1,0 +1,27 @@
+{
+    "params": {
+        "global_thresh": 89,
+        "adaptive_c": 1,
+        "adaptive_block_idx": 1,
+        "min_area": 1,
+        "max_area": 1243,
+        "erode_iters": 1,
+        "dilate_iters": 0,
+        "kernel_size": 1,
+        "mask_mode": "AND",
+        "clahe_enabled": true
+    },
+    "cam_index": 1,
+    "target_fps": 60,
+    "detection_enabled": true,
+    "auto_save": false,
+    "save_original": false,
+    "play_sound": false,
+    "roi_enabled": true,
+    "roi_points": [
+        912,
+        194,
+        1542,
+        837
+    ]
+}
