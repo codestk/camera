@@ -16,12 +16,12 @@
     "detection_enabled": true,
     "auto_save": true,
     "save_original": true,
-    "play_sound": true,
+    "play_sound": false,
     "roi_enabled": true,
     "roi_points": [
-        30,
-        9,
-        567,
-        377
+        198,
+        665,
+        198,
+        665
     ]
 }
