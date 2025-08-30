@@ -1,13 +1,13 @@
 {
     "params": {
-        "global_thresh": 73,
-        "adaptive_c": 1,
+        "global_thresh": 126,
+        "adaptive_c": 2,
         "adaptive_block_idx": 1,
         "min_area": 1,
         "max_area": 2023,
         "erode_iters": 0,
         "dilate_iters": 0,
-        "kernel_size": 1,
+        "kernel_size": 3,
         "mask_mode": "AND",
         "clahe_enabled": true
     },
@@ -21,9 +21,9 @@
     "play_sound": false,
     "roi_enabled": true,
     "roi_points": [
-        55,
-        92,
-        1818,
-        932
+        352,
+        138,
+        1686,
+        955
     ]
 }

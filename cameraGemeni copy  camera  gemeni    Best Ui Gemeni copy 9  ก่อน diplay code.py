@@ -13,8 +13,6 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QObject, QTimer, QPoint, QEven
 import threading
 import cv2
 import numpy as np
-import struct # <<<<<<<<<<<<<<<<<<<<<<<< 1. เพิ่ม IMPORT STRUCT
-
 try:
     import winsound # For playing sound on Windows
 except ImportError:
@@ -29,23 +27,6 @@ SAVE_DIR = "captures"
 SETTINGS_FILE = "settings.json"
 SOUND_FILE = "alert.wav"
 os.makedirs(SAVE_DIR, exist_ok=True)
-
-# ======================================================================
-# Helper Functions
-# ======================================================================
-# vvvvvvvvvvvvvvvvvvvvvvvvvvvv 2. แก้ไขฟังก์ชันนี้ทั้งหมด vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-def int_fourcc_to_str(fourcc_int: int) -> str:
-    """Converts a FOURCC integer code to a readable string using struct, handles errors."""
-    if not isinstance(fourcc_int, (int, float)) or int(fourcc_int) == 0:
-        return "N/A"
-    try:
-        # Pack the integer into 4 bytes (little-endian) and decode as ASCII.
-        # 'replace' will insert a placeholder '' for any byte that is not valid ASCII.
-        return struct.pack('<I', int(fourcc_int)).decode('ascii', errors='replace')
-    except (struct.error, OverflowError):
-        # If the int is too large or causes a packing error, show its raw hex value.
-        return f"Raw({hex(int(fourcc_int))})"
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 # ======================================================================
 # Video Processing Worker Thread
@@ -80,6 +61,7 @@ class VideoWorker(QObject):
         self.cam_index = cam_index
         self.target_fps = target_fps
         self.desired_width = desired_width
+        #self.desired_height = desired_height
         self.desired_height = 120
 
         self.detection_enabled = True
@@ -99,7 +81,6 @@ class VideoWorker(QObject):
         self.session_timestamp = session_timestamp
         self.detection_log = []
         self.backend_name = ""
-        self.codec_name = "" # To store the current codec name
 
     def run(self):
         cap = None
@@ -151,19 +132,14 @@ class VideoWorker(QObject):
                 if not cap.isOpened():
                     self.connection_failed.emit(f"เปิดไฟล์วิดีโอไม่สำเร็จ (FFMPEG):\n{self.video_path}\n\nแนะนำเข้ารหัสเป็น H.264 (.mp4) ถ้ายังเปิดไม่ได้")
                     return
-                
-                # Get codec for video file
-                fourcc_int = cap.get(cv2.CAP_PROP_FOURCC)
-                self.codec_name = int_fourcc_to_str(fourcc_int)
                 self.print_video_props(cap)
-                print(f"[SOURCE] Using video file (FFMPEG): {self.video_path}, Codec: {self.codec_name}")
-
+                print(f"[SOURCE] Using video file (FFMPEG): {self.video_path}")
             else: # Camera
                 print(f"[SOURCE] Auto-detecting backend for camera index {self.cam_index}...")
                 backends_to_try = [cv2.CAP_DSHOW, cv2.CAP_MSMF, None]
                 for be in backends_to_try:
                     be_name = "Default" if be is None else ("DSHOW" if be == cv2.CAP_DSHOW else "MSMF")
-                    print(f"[SOURCE]   -> Trying backend: {be_name}")
+                    print(f"[SOURCE]   -> Trying backend: {be_name}")
                     cap = cv2.VideoCapture(self.cam_index) if be is None else cv2.VideoCapture(self.cam_index, be)
                     if cap and cap.isOpened():
                         print(f"[SOURCE] Successfully opened camera with backend: {be_name}")
@@ -178,24 +154,18 @@ class VideoWorker(QObject):
                 
                 print(f"[SOURCE] Using camera index {self.cam_index}")
                 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-                
+
+                print(f"[SOURCE] CAP_PROP_FRAME_WIDTH {self.desired_width}")
+                print(f"[SOURCE] CAP_PROP_FRAME_HEIGHT {self.desired_height}")
                 if self.desired_width > 0 and self.desired_height > 0:
                     cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(self.desired_width))
                     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(self.desired_height))
                 if self.target_fps > 0:
                     cap.set(cv2.CAP_PROP_FPS, float(self.target_fps))
 
-                # Read back actual camera properties, including the codec
-                actual_fourcc_int = cap.get(cv2.CAP_PROP_FOURCC)
-                self.codec_name = int_fourcc_to_str(actual_fourcc_int)
-                self.print_video_props(cap, self.codec_name)
-
-
             mode_text = "Camera" if self.source_type == "camera" else "Video"
             if self.source_type == "camera" and self.backend_name:
                 mode_text += f" ({self.backend_name})"
-            
-            codec_part = f"Codec: {self.codec_name} | " if self.codec_name and self.codec_name != "N/A" else ""
 
             frame_interval = 1.0 / self.target_fps if self.target_fps > 0 else 0
             fps_avg, n, last_t = 0.0, 0, time.time()
@@ -242,11 +212,11 @@ class VideoWorker(QObject):
                     now = time.time()
                     fps = 1.0 / max(1e-6, (now - last_t)); last_t = now; n += 1
                     fps_avg = (fps_avg * (n - 1) + fps) / n
-                    status_text = (f"Mode: {mode_text} | {codec_part}Detected: {pest_count} | FPS: {fps:.1f} (avg {fps_avg:.1f}) | Mean Area: {mean_area:.0f}")
+                    status_text = (f"Mode: {mode_text} | Detected: {pest_count} | FPS: {fps:.1f} (avg {fps_avg:.1f}) | Mean Area: {mean_area:.0f}")
                 else:
                     result_frame = frame.copy()
                     mask_frame = np.zeros((frame.shape[0], frame.shape[1]), dtype=np.uint8)
-                    status_text = f"Mode: {mode_text} | {codec_part}การตรวจจับปิดอยู่"
+                    status_text = f"Mode: {mode_text} | การตรวจจับปิดอยู่"
 
                 if self.recording and self.video_writer is not None:
                     self.video_writer.write(result_frame)
@@ -376,15 +346,13 @@ class VideoWorker(QObject):
             return False, ""
 
     @staticmethod
-    def print_video_props(cap, codec_name=""):
+    def print_video_props(cap):
         try:
             total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             fps = cap.get(cv2.CAP_PROP_FPS)
             w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            codec_str = f", Codec: {codec_name}" if codec_name else ""
-            frames_str = f", frames={total}" if total > 0 else ""
-            print(f"[VIDEO] {w}x{h} @ {fps:.2f} fps{frames_str}{codec_str}")
+            print(f"[VIDEO] {w}x{h} @ {fps:.2f} fps, frames={total}")
         except Exception:
             pass
 
