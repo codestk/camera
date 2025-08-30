@@ -61,8 +61,7 @@ class VideoWorker(QObject):
         self.cam_index = cam_index
         self.target_fps = target_fps
         self.desired_width = desired_width
-        #self.desired_height = desired_height
-        self.desired_height = 120
+        self.desired_height = desired_height
 
         self.detection_enabled = True
         self.auto_save_on_detect = False
@@ -80,7 +79,6 @@ class VideoWorker(QObject):
         self.session_save_path = session_save_path
         self.session_timestamp = session_timestamp
         self.detection_log = []
-        self.backend_name = ""
 
     def run(self):
         cap = None
@@ -99,7 +97,7 @@ class VideoWorker(QObject):
                 
                 if self.detection_enabled:
                     result_frame, mask_frame, pest_count, mean_area = self.process_frame(frame)
-                    status_text = f"Mode: Image | Detected: {pest_count} | Mean Area: {mean_area:.0f} | File: {os.path.basename(self.video_path)}"
+                    status_text = f"Detected: {pest_count} | Mean Area: {mean_area:.0f} | File: {os.path.basename(self.video_path)}"
                     if pest_count > 0:
                         ts_for_log = datetime.now()
                         self.detection_log.append((ts_for_log, pest_count))
@@ -115,7 +113,7 @@ class VideoWorker(QObject):
                 else:
                     result_frame = frame.copy()
                     mask_frame = np.zeros((frame.shape[0], frame.shape[1]), dtype=np.uint8)
-                    status_text = "Mode: Image | การตรวจจับปิดอยู่"
+                    status_text = "การตรวจจับปิดอยู่"
 
                 with self.lock:
                     self.latest_original_frame = frame.copy()
@@ -143,7 +141,6 @@ class VideoWorker(QObject):
                     cap = cv2.VideoCapture(self.cam_index) if be is None else cv2.VideoCapture(self.cam_index, be)
                     if cap and cap.isOpened():
                         print(f"[SOURCE] Successfully opened camera with backend: {be_name}")
-                        self.backend_name = be_name
                         break
                     else:
                         if cap: cap.release()
@@ -154,18 +151,11 @@ class VideoWorker(QObject):
                 
                 print(f"[SOURCE] Using camera index {self.cam_index}")
                 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-
-                print(f"[SOURCE] CAP_PROP_FRAME_WIDTH {self.desired_width}")
-                print(f"[SOURCE] CAP_PROP_FRAME_HEIGHT {self.desired_height}")
                 if self.desired_width > 0 and self.desired_height > 0:
                     cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(self.desired_width))
                     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(self.desired_height))
                 if self.target_fps > 0:
                     cap.set(cv2.CAP_PROP_FPS, float(self.target_fps))
-
-            mode_text = "Camera" if self.source_type == "camera" else "Video"
-            if self.source_type == "camera" and self.backend_name:
-                mode_text += f" ({self.backend_name})"
 
             frame_interval = 1.0 / self.target_fps if self.target_fps > 0 else 0
             fps_avg, n, last_t = 0.0, 0, time.time()
@@ -212,11 +202,11 @@ class VideoWorker(QObject):
                     now = time.time()
                     fps = 1.0 / max(1e-6, (now - last_t)); last_t = now; n += 1
                     fps_avg = (fps_avg * (n - 1) + fps) / n
-                    status_text = (f"Mode: {mode_text} | Detected: {pest_count} | FPS: {fps:.1f} (avg {fps_avg:.1f}) | Mean Area: {mean_area:.0f}")
+                    status_text = (f"Detected: {pest_count} | FPS: {fps:.1f} (avg {fps_avg:.1f}) | Mean Area: {mean_area:.0f}")
                 else:
                     result_frame = frame.copy()
                     mask_frame = np.zeros((frame.shape[0], frame.shape[1]), dtype=np.uint8)
-                    status_text = f"Mode: {mode_text} | การตรวจจับปิดอยู่"
+                    status_text = "การตรวจจับปิดอยู่"
 
                 if self.recording and self.video_writer is not None:
                     self.video_writer.write(result_frame)
@@ -435,7 +425,7 @@ class MainWindow(QMainWindow):
             "min_area": 18, "max_area": 1500, "erode_iters": 1,
             "dilate_iters": 2, "kernel_size": 3
         }
-        self.cam_index = 1
+        self.cam_index = 0
         self.target_fps = 30
         self.pref_width = 1920
         self.pref_height = 1080
@@ -542,16 +532,14 @@ class MainWindow(QMainWindow):
 
         # Resolution controls
         res_row = QHBoxLayout()
-        res_row.addWidget(QLabel("Resolution"))
-        self.res_combobox = QComboBox()
-        self.resolutions = [
-           (2592,1440 ), (2304, 1296), (1920, 1080), (1600, 900), (1280, 720),
-            (1024, 576), (960, 540), (800, 450), (640, 480)
-        ]
-        for w, h in self.resolutions:
-            self.res_combobox.addItem(f"{w} × {h}")
-        self.res_combobox.currentIndexChanged.connect(self.on_resolution_selected)
-        res_row.addWidget(self.res_combobox)
+        res_row.addWidget(QLabel("Resolution (W×H)"))
+        self.spin_width = QSpinBox(); self.spin_width.setRange(160, 7680); self.spin_width.setSingleStep(16)
+        self.spin_height = QSpinBox(); self.spin_height.setRange(120, 4320); self.spin_height.setSingleStep(16)
+        self.spin_width.valueChanged.connect(self.on_resolution_changed)
+        self.spin_height.valueChanged.connect(self.on_resolution_changed)
+        res_row.addWidget(self.spin_width)
+        res_row.addWidget(QLabel("×"))
+        res_row.addWidget(self.spin_height)
         layout.addLayout(res_row)
 
         self.btn_open_source = QPushButton("เลือกไฟล์ภาพ/วิดีโอ…")
@@ -623,7 +611,6 @@ class MainWindow(QMainWindow):
         self.mask_label = QLabel("Mask"); self.mask_label.setAlignment(Qt.AlignmentFlag.AlignCenter); self.mask_label.setStyleSheet("background-color: black; color: white;")
         h.addWidget(self.video_label, 1); h.addWidget(self.mask_label, 1); v.addLayout(h)
         self.status_label = QLabel("สถานะ: กำลังเริ่มต้น…"); self.status_label.setFixedHeight(25); v.addWidget(self.status_label)
-
         return v
 
     def open_source_file(self):
@@ -658,7 +645,7 @@ class MainWindow(QMainWindow):
         elif source_type == "image":
             self.status_label.setText(f"สถานะ: เปิดไฟล์ภาพ -> {os.path.basename(path)}")
         else: # camera
-            self.status_label.setText("สถานะ: กำลังค้นหา Backend ของกล้อง...")
+            self.status_label.setText("สถานะ: ใช้กล้อง (Webcam)")
             
         self.start_video_thread(source_type=source_type, video_path=path)
 
@@ -670,19 +657,11 @@ class MainWindow(QMainWindow):
         if self.video_worker is not None:
             self.video_worker.target_fps = self.target_fps
 
-    def on_resolution_selected(self, index):
-        if index < 0 or index >= len(self.resolutions):
-            return
-        
-        selected_res = self.resolutions[index]
-        self.pref_width = selected_res[0]
-        self.pref_height = selected_res[1]
-        
-        print(f"[UI] Resolution changed to: {self.pref_width}x{self.pref_height}")
+    def on_resolution_changed(self):
+        self.pref_width = int(self.spin_width.value())
+        self.pref_height = int(self.spin_height.value())
         self.save_settings()
-        
         if self.current_source_type == 'camera':
-            print("[UI] Restarting camera thread with new resolution...")
             self.start_video_thread(self.current_source_type, self.current_source_path)
 
     def on_auto_save_changed(self):
@@ -768,17 +747,11 @@ class MainWindow(QMainWindow):
             rf = vw.latest_result_frame.copy() if vw.latest_result_frame is not None else None
             mf = vw.latest_mask_frame.copy() if vw.latest_mask_frame is not None else None
             st = vw.latest_status_text
-
-        final_status_text = f"สถานะ: {st}"
         if rf is not None:
             self.video_label.setPixmap(QPixmap.fromImage(self.to_qimage(rf)).scaled(self.video_label.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-            h, w = rf.shape[:2]
-            resolution_text = f"{w}×{h}"
-            final_status_text = f"สถานะ: {resolution_text} | {st}"
-
         if mf is not None:
             self.mask_label.setPixmap(QPixmap.fromImage(self.to_qimage(mf, is_mask=True)).scaled(self.mask_label.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        self.status_label.setText(final_status_text)
+        self.status_label.setText(f"สถานะ: {st}")
 
     def to_qimage(self, img, is_mask=False):
         if is_mask:
@@ -890,28 +863,11 @@ class MainWindow(QMainWindow):
 
         self.spin_cam_idx.setValue(self.cam_index)
         self.spin_fps.setValue(self.target_fps)
-        if hasattr(self, 'res_combobox'):
-            # Block signals to prevent on_resolution_selected from firing during setup
-            self.res_combobox.blockSignals(True)
-            
-            current_res_tuple = (self.pref_width, self.pref_height)
-            
-            # Check if the saved resolution is already in the standard list
-            found_index = -1
-            for i, res in enumerate(self.resolutions):
-                if res == current_res_tuple:
-                    found_index = i
-                    break
-            
-            if found_index != -1:
-                self.res_combobox.setCurrentIndex(found_index)
-            else:
-                # If not found, add it as a custom option and select it
-                self.res_combobox.insertItem(0, f"{current_res_tuple[0]} × {current_res_tuple[1]} (Custom)")
-                self.resolutions.insert(0, current_res_tuple)
-                self.res_combobox.setCurrentIndex(0)
-            self.res_combobox.blockSignals(False)
-
+        if hasattr(self, 'spin_width'):
+            self.spin_width.setValue(getattr(self, 'pref_width', 1920))
+        if hasattr(self, 'spin_height'):
+            self.spin_height.setValue(getattr(self, 'pref_height', 1080))
+        
         self.chk_enable_detection.setChecked(self.pref_detection_enabled)
         self.chk_auto_save.setChecked(self.pref_auto_save)
         self.chk_save_original.setChecked(self.pref_save_original)

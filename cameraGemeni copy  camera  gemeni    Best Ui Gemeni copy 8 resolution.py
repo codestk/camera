@@ -624,6 +624,11 @@ class MainWindow(QMainWindow):
         h.addWidget(self.video_label, 1); h.addWidget(self.mask_label, 1); v.addLayout(h)
         self.status_label = QLabel("สถานะ: กำลังเริ่มต้น…"); self.status_label.setFixedHeight(25); v.addWidget(self.status_label)
 
+        # --- NEW: current resolution label ---
+        self.resolution_label = QLabel("ความละเอียดปัจจุบัน: -")
+        self.resolution_label.setFixedHeight(24)
+        v.addWidget(self.resolution_label)
+
         return v
 
     def open_source_file(self):
@@ -768,17 +773,14 @@ class MainWindow(QMainWindow):
             rf = vw.latest_result_frame.copy() if vw.latest_result_frame is not None else None
             mf = vw.latest_mask_frame.copy() if vw.latest_mask_frame is not None else None
             st = vw.latest_status_text
-
-        final_status_text = f"สถานะ: {st}"
         if rf is not None:
             self.video_label.setPixmap(QPixmap.fromImage(self.to_qimage(rf)).scaled(self.video_label.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            # --- NEW: show current resolution from latest frame ---
             h, w = rf.shape[:2]
-            resolution_text = f"{w}×{h}"
-            final_status_text = f"สถานะ: {resolution_text} | {st}"
-
+            self.resolution_label.setText(f"ความละเอียดปัจจุบัน: {w}×{h}")
         if mf is not None:
             self.mask_label.setPixmap(QPixmap.fromImage(self.to_qimage(mf, is_mask=True)).scaled(self.mask_label.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        self.status_label.setText(final_status_text)
+        self.status_label.setText(f"สถานะ: {st}")
 
     def to_qimage(self, img, is_mask=False):
         if is_mask:

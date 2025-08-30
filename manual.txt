@@ -24,3 +24,30 @@ Min_Area: ขนาดเล็กสุด
 Max_Area: ขนาดใหญ่สุด
 
 ปรับเพื่อกรองวัตถุขนาดใหญ่ที่ไม่ใช่แมลงออกไป หากโปรแกรมตรวจจับพื้นที่ขนาดใหญ่ผิดพลาด ให้ลองลดค่านี้ลง
+
+
+
+>>> Trying Backend: DSHOW
+    Camera opened successfully.
+    OpenCV Backend in use: DSHOW
+
+    --- Discovered Supported Modes ---
+    -> 1920x1080 @ 60 FPS, Format: YUY2
+    -> 1920x1080 @ 30 FPS, Format: YUY2
+    -> 1920x1080 @ 24 FPS, Format: YUY2
+    -> 1920x1080 @ 15 FPS, Format: YUY2
+    -> 1280x720 @ 60 FPS, Format: YUY2
+    -> 1280x720 @ 30 FPS, Format: YUY2
+    -> 1280x720 @ 24 FPS, Format: YUY2
+    -> 1280x720 @ 15 FPS, Format: YUY2
+    -> 800x600 @ 60 FPS, Format: YUY2
+    -> 800x600 @ 30 FPS, Format: YUY2
+    -> 800x600 @ 24 FPS, Format: YUY2
+    -> 800x600 @ 15 FPS, Format: YUY2
+    -> 640x480 @ 60 FPS, Format: YUY2
+    -> 640x480 @ 30 FPS, Format: YUY2
+    -> 640x480 @ 24 FPS, Format: YUY2
+    -> 640x480 @ 15 FPS, Format: YUY2
+    ----------------------------------
+
+    Camera released.
