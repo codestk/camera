@@ -1,0 +1,10 @@
+# kiroRules.md
+
+description:
+first นี้เป็นตัว run cameraGemeni copy camera gemeni Best Ui Gemeni.py ที่เหลือเป็น backup ไฟล์ที่เหลือเป็นไฟล์ backup ไม่ต้องแก้
+
+## Guidelines
+
+alwaysApply: true
+
+---

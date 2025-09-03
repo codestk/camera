@@ -249,7 +249,8 @@ class VideoWorker(QObject):
                     status_text = f"Mode: {mode_text} | {codec_part}การตรวจจับปิดอยู่"
 
                 if self.recording and self.video_writer is not None:
-                    self.video_writer.write(result_frame)
+                    # Write the original frame to the video writer
+                    self.video_writer.write(frame)
 
                 with self.lock:
                     self.latest_original_frame = frame.copy()
@@ -432,13 +433,13 @@ class ROISelectorLabel(QLabel):
         painter = QPainter(self)
         # ROI selection rectangle
         if self.is_selecting:
-            pen = QPen(Qt.GlobalColor.red, 2, Qt.PenStyle.DashLine)
+            pen = QPen(Qt.GlobalColor.red, 2, Qt.PenStyle.SolidLine)
             painter.setPen(pen)
             painter.drawRect(QRect(self.start_point, self.end_point).normalized())
         # Centered crosshair
         if self.crosshair_enabled:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            pen = QPen(Qt.GlobalColor.red, self.crosshair_thickness)
+            pen = QPen(Qt.GlobalColor.blue, self.crosshair_thickness)
             painter.setPen(pen)
             cx = self.width() // 2
             cy = self.height() // 2
@@ -1001,13 +1002,13 @@ class MainWindow(QMainWindow):
             QLabel { font-size: 14px; }
             QPushButton { background-color: #555; border: 1px solid #777; padding: 8px; border-radius: 4px; }
             QPushButton:hover { background-color: #666; }
-            QPushButton:checked { background-color: #007ACC; border: 1px solid #005C99; }
+            QPushButton:checked { background-color: #3498DB; border: 1px solid #2980B9; }
             QSlider::groove:horizontal { border: 1px solid #444; height: 8px; background: #333; margin: 2px 0; border-radius: 4px; }
-            QSlider::handle:horizontal { background: #007ACC; border: 1px solid #005C99; width: 18px; margin: -5px 0; border-radius: 9px; }
+            QSlider::handle:horizontal { background: #3498DB; border: 1px solid #2980B9; width: 18px; margin: -5px 0; border-radius: 9px; }
             
-            QCheckBox { 
-                font-size: 14px; 
-                spacing: 5px; 
+            QCheckBox {
+                font-size: 14px;
+                spacing: 5px;
                 color: #E0E0E0;
             }
             QCheckBox::indicator {
@@ -1018,8 +1019,8 @@ class MainWindow(QMainWindow):
                 border-radius: 2px;
             }
             QCheckBox::indicator:checked {
-                background-color: #007ACC;
-                border: 1px solid #005C99;
+                background-color: #3498DB;
+                border: 1px solid #2980B9;
             }
             QCheckBox::indicator:hover {
                 border: 1px solid #bbb;
