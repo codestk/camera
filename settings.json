@@ -1,6 +1,6 @@
 {
     "params": {
-        "global_thresh": 155,
+        "global_thresh": 132,
         "adaptive_c": 1,
         "adaptive_block_idx": 1,
         "min_area": 1,
@@ -16,7 +16,7 @@
     "camera_width": 1920,
     "camera_height": 1080,
     "detection_enabled": true,
-    "auto_save": false,
+    "auto_save": true,
     "save_original": false,
     "play_sound": false,
     "roi_enabled": true,
