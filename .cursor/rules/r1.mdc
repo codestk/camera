@@ -1,8 +1,14 @@
 ---
-description:
-
-first  นี้เป็นตัว   run   cameraGemeni copy  camera  gemeni    Best Ui Gemeni.py  ที่เหลือเป็น backup  ไฟล์ที่เหลือเป็นไฟล์ backup ไม่ต้องแก้
-
-globs:
+name: Base Workspace Rules
+description: กฎพื้นฐานสำหรับโปรเจกต์นี้ ให้ AI ปฏิบัติตามเสมอ
 alwaysApply: true
+globs:
+  - "**/*"
 ---
+
+แนวปฏิบัติหลัก (ย่อ):
+- ใช้ Python 3.10+, รูปแบบโค้ดตาม PEP 8, 4 spaces
+- งานหนัก/IO ไปที่ worker threads, UI อัปเดตผ่านสัญญาณ/ตัวจับเวลา
+- หลีกเลี่ยงการ freeze UI, จัดการข้อผิดพลาดและ log อย่างชัดเจน
+- สี crosshair เริ่มต้นเป็นสีเขียว, สไตล์รวมศูนย์ใน set_stylesheet()
+

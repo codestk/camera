@@ -439,7 +439,7 @@ class ROISelectorLabel(QLabel):
         # Centered crosshair
         if self.crosshair_enabled:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            pen = QPen(Qt.GlobalColor.blue, self.crosshair_thickness)
+            pen = QPen(Qt.GlobalColor.green, self.crosshair_thickness)
             painter.setPen(pen)
             cx = self.width() // 2
             cy = self.height() // 2
