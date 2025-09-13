@@ -1,29 +1,29 @@
 {
     "params": {
-        "global_thresh": 132,
+        "global_thresh": 85,
         "adaptive_c": 1,
-        "adaptive_block_idx": 1,
+        "adaptive_block_idx": 10,
         "min_area": 1,
-        "max_area": 2209,
+        "max_area": 20000,
         "erode_iters": 0,
         "dilate_iters": 0,
-        "kernel_size": 1,
+        "kernel_size": 6,
         "mask_mode": "AND",
         "clahe_enabled": true
     },
     "cam_index": 1,
     "target_fps": 60,
-    "camera_width": 1920,
-    "camera_height": 1080,
+    "camera_width": 2304,
+    "camera_height": 1296,
     "detection_enabled": true,
     "auto_save": true,
     "save_original": false,
-    "play_sound": false,
+    "play_sound": true,
     "roi_enabled": true,
     "roi_points": [
-        367,
-        155,
-        1746,
-        756
+        460,
+        98,
+        2128,
+        1154
     ]
 }
