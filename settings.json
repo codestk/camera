@@ -1,7 +1,7 @@
 {
     "params": {
-        "global_thresh": 85,
-        "adaptive_c": 1,
+        "global_thresh": 59,
+        "adaptive_c": 2,
         "adaptive_block_idx": 10,
         "min_area": 1,
         "max_area": 20000,
@@ -17,13 +17,35 @@
     "camera_height": 1296,
     "detection_enabled": true,
     "auto_save": true,
-    "save_original": false,
-    "play_sound": true,
+    "save_original": true,
+    "play_sound": false,
     "roi_enabled": true,
-    "roi_points": [
-        460,
-        98,
-        2128,
-        1154
+    "roi_points": [],
+    "roi_mode": "polygon",
+    "roi_polygon_points": [
+        [
+            392,
+            310
+        ],
+        [
+            653,
+            828
+        ],
+        [
+            1141,
+            830
+        ],
+        [
+            1629,
+            421
+        ],
+        [
+            1506,
+            71
+        ],
+        [
+            392,
+            310
+        ]
     ]
 }

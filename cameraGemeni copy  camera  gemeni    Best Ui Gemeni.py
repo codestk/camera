@@ -47,6 +47,19 @@ def int_fourcc_to_str(fourcc_int: int) -> str:
         return f"Raw({hex(int(fourcc_int))})"
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+def ensure_detection_folders(base_path):
+    """สร้างโฟลเดอร์ original และ detected ภายใต้ base_path"""
+    if not os.path.exists(base_path):
+        os.makedirs(base_path, exist_ok=True)
+    
+    original_folder = os.path.join(base_path, "original")
+    detected_folder = os.path.join(base_path, "detected")
+    
+    os.makedirs(original_folder, exist_ok=True)
+    os.makedirs(detected_folder, exist_ok=True)
+    
+    return original_folder, detected_folder
+
 # ======================================================================
 # Video Processing Worker Thread
 # ======================================================================
@@ -93,7 +106,9 @@ class VideoWorker(QObject):
         self.sound_cooldown_seconds = 3.0
 
         self.roi_enabled = False
+        # Rect ROI: [(x1,y1),(x2,y2)] ; Poly ROI: [(x,y), ...]
         self.roi_points = []
+        self.roi_is_polygon = False
 
         self.session_save_path = session_save_path
         self.session_timestamp = session_timestamp
@@ -125,12 +140,19 @@ class VideoWorker(QObject):
                         if self.play_sound_on_detect: self.playSound.emit()
                         if self.auto_save_on_detect:
                             ts_str = ts_for_log.strftime('%Y%m%d_%H%M%S_%f')[:-3]
-                            detected_filename = os.path.join(self.session_save_path, f"auto_detect_{ts_str}_detected.png")
+                            original_folder, detected_folder = ensure_detection_folders(self.session_save_path)
+                            
+                            # บันทึกภาพที่มีการตรวจจับวัตถุในโฟลเดอร์ detected
+                            filename = f"auto_detect_{ts_str}.png"
+                            detected_filename = os.path.join(detected_folder, filename)
                             cv2.imwrite(detected_filename, result_frame)
+                            
+                            # บันทึกภาพต้นฉบับในโฟลเดอร์ original
                             if self.save_original_enabled:
-                                original_filename = os.path.join(self.session_save_path, f"auto_detect_{ts_str}_original.png")
+                                original_filename = os.path.join(original_folder, filename)
                                 cv2.imwrite(original_filename, frame)
-                            print(f"[AUTO-SAVE] Image(s) saved to {self.session_save_path}")
+                            print(f"[AUTO-SAVE] Image(s) saved to {self.session_save_path} (original/detected folders)")
+                            
                 else:
                     result_frame = frame.copy()
                     mask_frame = np.zeros((frame.shape[0], frame.shape[1]), dtype=np.uint8)
@@ -222,12 +244,21 @@ class VideoWorker(QObject):
                             self.detection_log.append((ts_for_log, pest_count))
                             if self.auto_save_on_detect:
                                 ts_str = ts_for_log.strftime('%Y%m%d_%H%M%S_%f')[:-3]
-                                detected_filename = os.path.join(self.session_save_path, f"auto_detect_{ts_str}_detected.png")
+                                # สร้างโฟลเดอร์ original และ detected
+                                original_folder, detected_folder = ensure_detection_folders(self.session_save_path)
+                                
+                                # กำหนดชื่อไฟล์เดียวกันสำหรับทั้งสองโฟลเดอร์
+                                filename = f"auto_detect_{ts_str}.png"
+                                
+                                # บันทึกภาพที่มีการตรวจจับวัตถุในโฟลเดอร์ detected
+                                detected_filename = os.path.join(detected_folder, filename)
                                 cv2.imwrite(detected_filename, result_frame)
+                                
+                                # บันทึกภาพต้นฉบับในโฟลเดอร์ original
                                 if self.save_original_enabled:
-                                    original_filename = os.path.join(self.session_save_path, f"auto_detect_{ts_str}_original.png")
+                                    original_filename = os.path.join(original_folder, filename)
                                     cv2.imwrite(original_filename, frame)
-                                print(f"[AUTO-SAVE] Image(s) saved to {self.session_save_path}")
+                                print(f"[AUTO-SAVE] Image(s) saved to {self.session_save_path} (original/detected folders)")
                             self.last_event_time = current_time
                     
                     if is_detecting_now and self.play_sound_on_detect:
@@ -305,14 +336,20 @@ class VideoWorker(QObject):
         processing_gray = gray
 
         if self.roi_enabled and self.roi_points:
-            x1, y1 = self.roi_points[0]
-            x2, y2 = self.roi_points[1]
-            
-            offset_x, offset_y = x1, y1
-            
-            processing_gray = gray[y1:y2, x1:x2]
-            
-            cv2.rectangle(result_frame, (x1, y1), (x2, y2), (255, 0, 255), 2)
+            if self.roi_is_polygon and len(self.roi_points) >= 3:
+                # Draw polygon overlay and prepare ROI mask (full-frame)
+                pts = np.array(self.roi_points, dtype=np.int32)
+                cv2.polylines(result_frame, [pts], True, (255, 0, 255), 2)
+                roi_mask = np.zeros(gray.shape, dtype=np.uint8)
+                cv2.fillPoly(roi_mask, [pts], 255)
+                # For thresholding, operate on full gray; restrict later by mask
+            else:
+                # Fallback to rectangle ROI with two points
+                x1, y1 = self.roi_points[0]
+                x2, y2 = self.roi_points[1]
+                offset_x, offset_y = x1, y1
+                processing_gray = gray[y1:y2, x1:x2]
+                cv2.rectangle(result_frame, (x1, y1), (x2, y2), (255, 0, 255), 2)
 
         if processing_gray.shape[0] == 0 or processing_gray.shape[1] == 0:
             return result_frame, np.zeros(gray.shape, dtype=np.uint8), 0, 0
@@ -332,6 +369,13 @@ class VideoWorker(QObject):
                                          cv2.THRESH_BINARY_INV, block, C)
         _, global_t = cv2.threshold(processing_gray, gT, 255, cv2.THRESH_BINARY_INV)
         mask = cv2.bitwise_and(adaptive, global_t)
+        # If polygon ROI was requested, restrict mask to polygon on full-frame coordinates
+        if self.roi_enabled and self.roi_is_polygon and self.roi_points and len(self.roi_points) >= 3:
+            poly_mask = np.zeros(gray.shape, dtype=np.uint8)
+            cv2.fillPoly(poly_mask, [np.array(self.roi_points, dtype=np.int32)], 255)
+            # If processing_gray was the full frame, mask has full size; otherwise, keep as is
+            if processing_gray.shape == gray.shape:
+                mask = cv2.bitwise_and(mask, poly_mask)
         kernel = np.ones((ksz, ksz), np.uint8)
         
         if di > 0: mask = cv2.dilate(mask, kernel, iterations=di)
@@ -351,10 +395,15 @@ class VideoWorker(QObject):
         
         final_display_mask = np.zeros(gray.shape, dtype=np.uint8)
         if self.roi_enabled and self.roi_points:
-            x1, y1 = self.roi_points[0]
-            x2, y2 = self.roi_points[1]
-            if mask.shape[0] == (y2 - y1) and mask.shape[1] == (x2 - x1):
-                final_display_mask[y1:y2, x1:x2] = mask
+            if self.roi_is_polygon and len(self.roi_points) >= 3:
+                # Already aligned to full frame when polygon mode
+                if mask.shape == gray.shape:
+                    final_display_mask = mask
+            else:
+                x1, y1 = self.roi_points[0]
+                x2, y2 = self.roi_points[1]
+                if mask.shape[0] == (y2 - y1) and mask.shape[1] == (x2 - x1):
+                    final_display_mask[y1:y2, x1:x2] = mask
         else:
             final_display_mask = mask
 
@@ -391,54 +440,171 @@ class VideoWorker(QObject):
 
 class ROISelectorLabel(QLabel):
     roi_selected = pyqtSignal(QRect)
+    roi_path_selected = pyqtSignal(object)  # list of QPoint for freehand/polygon
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.is_selecting = False
         self.start_point = QPoint()
         self.end_point = QPoint()
+        # Polygon (Pen) mode state
+        self.selection_mode = 'rect'  # 'rect' or 'polygon'
+        self.is_drawing_path = False
+        self.path_points = []  # list[QPoint]
+        self.hover_point = None  # QPoint for rubber-band preview
+        self.hover_near_start = False
+        self.close_snap_radius = 12  # pixels
         # Crosshair settings
         self.crosshair_enabled = True
         self.crosshair_size = 20
         self.crosshair_thickness = 2
 
     def start_selection(self):
+        # Backward compatibility: default to rectangle selection
+        self.selection_mode = 'rect'
         self.is_selecting = True
+        self.is_drawing_path = False
+        self.path_points = []
+        self.setCursor(Qt.CursorShape.CrossCursor)
+
+    def start_freehand(self):
+        # Start point-to-point polygon selection (Pen-like)
+        self.selection_mode = 'polygon'
+        self.is_selecting = True
+        self.is_drawing_path = False
+        self.path_points = []
         self.setCursor(Qt.CursorShape.CrossCursor)
 
     def mousePressEvent(self, event):
-        if self.is_selecting and event.button() == Qt.MouseButton.LeftButton:
-            self.start_point = event.pos()
-            self.end_point = self.start_point
-            self.update()
+        if self.is_selecting:
+            if self.selection_mode == 'polygon':
+                if event.button() == Qt.MouseButton.LeftButton:
+                    # Add vertex point or close if near the first point
+                    if not self.is_drawing_path:
+                        self.is_drawing_path = True
+                        self.path_points = [event.pos()]
+                        self.hover_point = None
+                    else:
+                        # If close to the first point and we have at least 3 points, close polygon
+                        if len(self.path_points) >= 3 and self._near_first_point(event.pos()):
+                            # Append first to close if needed and emit
+                            pts = self.path_points.copy()
+                            if pts[0] != pts[-1]:
+                                pts.append(pts[0])
+                            self.is_selecting = False
+                            self.setCursor(Qt.CursorShape.ArrowCursor)
+                            self.roi_path_selected.emit(pts)
+                            # reset state
+                            self.is_drawing_path = False
+                            self.path_points = []
+                            self.hover_point = None
+                            self.hover_near_start = False
+                        else:
+                            self.path_points.append(event.pos())
+                            self.hover_point = None
+                    self.update()
+                elif event.button() == Qt.MouseButton.RightButton:
+                    # Finish polygon on right-click if valid
+                    if self.is_drawing_path and len(self.path_points) >= 3:
+                        pts = self.path_points.copy()
+                        if pts[0] != pts[-1]:
+                            pts.append(pts[0])
+                        self.is_selecting = False
+                        self.setCursor(Qt.CursorShape.ArrowCursor)
+                        self.roi_path_selected.emit(pts)
+                    # reset state
+                    self.is_drawing_path = False
+                    self.path_points = []
+                    self.hover_point = None
+                    self.hover_near_start = False
+                    self.update()
+            else:
+                if event.button() == Qt.MouseButton.LeftButton:
+                    self.start_point = event.pos()
+                    self.end_point = self.start_point
+                    self.update()
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        if self.is_selecting and event.buttons() == Qt.MouseButton.LeftButton:
-            self.end_point = event.pos()
-            self.update()
+        if self.is_selecting:
+            if self.selection_mode == 'polygon':
+                # Rubber-band preview from last point to cursor, with snap to start
+                if self.is_drawing_path:
+                    self.hover_point = event.pos()
+                    self.hover_near_start = (len(self.path_points) >= 3 and self._near_first_point(self.hover_point))
+                    self.update()
+            else:
+                if event.buttons() == Qt.MouseButton.LeftButton:
+                    self.end_point = event.pos()
+                    self.update()
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        if self.is_selecting and event.button() == Qt.MouseButton.LeftButton:
-            self.is_selecting = False
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-            selection_rect = QRect(self.start_point, self.end_point).normalized()
-            self.roi_selected.emit(selection_rect)
-            self.update()
+        if self.is_selecting:
+            if self.selection_mode == 'polygon':
+                # Do not finalize on left release; handled by right-click/double-click
+                pass
+            else:
+                if event.button() == Qt.MouseButton.LeftButton:
+                    self.is_selecting = False
+                    self.setCursor(Qt.CursorShape.ArrowCursor)
+                    selection_rect = QRect(self.start_point, self.end_point).normalized()
+                    self.roi_selected.emit(selection_rect)
+                    self.is_drawing_path = False
+                    self.path_points = []
+                    self.hover_point = None
+                    self.update()
         super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if self.is_selecting and self.selection_mode == 'polygon':
+            # Finish polygon on double-click if valid
+            if self.is_drawing_path and len(self.path_points) >= 3:
+                pts = self.path_points.copy()
+                if pts[0] != pts[-1]:
+                    pts.append(pts[0])
+                self.is_selecting = False
+                self.setCursor(Qt.CursorShape.ArrowCursor)
+                self.roi_path_selected.emit(pts)
+            self.is_drawing_path = False
+            self.path_points = []
+            self.hover_point = None
+            self.hover_near_start = False
+            self.update()
+        super().mouseDoubleClickEvent(event)
 
     def paintEvent(self, event):
         super().paintEvent(event)
         painter = QPainter(self)
-        # ROI selection rectangle
+        # ROI selection overlay
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self.is_selecting:
             pen = QPen(Qt.GlobalColor.red, 2, Qt.PenStyle.SolidLine)
             painter.setPen(pen)
-            painter.drawRect(QRect(self.start_point, self.end_point).normalized())
+            if self.selection_mode == 'polygon' and self.path_points:
+                # Draw accumulated segments
+                for i in range(1, len(self.path_points)):
+                    painter.drawLine(self.path_points[i-1], self.path_points[i])
+                # Rubber-band to cursor, snapped to start if close
+                if self.hover_point is not None and self.is_drawing_path:
+                    if self.hover_near_start and len(self.path_points) >= 3:
+                        painter.drawLine(self.path_points[-1], self.path_points[0])
+                    else:
+                        painter.drawLine(self.path_points[-1], self.hover_point)
+                # Small vertex markers
+                for pt in self.path_points:
+                    painter.drawEllipse(pt, 3, 3)
+                # Highlight first point as a close target when eligible
+                if len(self.path_points) >= 3:
+                    firstPen = QPen(Qt.GlobalColor.yellow if self.hover_near_start else Qt.GlobalColor.white, 1)
+                    painter.setPen(firstPen)
+                    painter.drawEllipse(self.path_points[0], self.close_snap_radius, self.close_snap_radius)
+                    painter.setPen(pen)
+            else:
+                painter.drawRect(QRect(self.start_point, self.end_point).normalized())
+                
         # Centered crosshair
         if self.crosshair_enabled:
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             pen = QPen(Qt.GlobalColor.green, self.crosshair_thickness)
             painter.setPen(pen)
             cx = self.width() // 2
@@ -447,6 +613,23 @@ class ROISelectorLabel(QLabel):
             painter.drawLine(cx - sz, cy, cx + sz, cy)
             painter.drawLine(cx, cy - sz, cx, cy + sz)
             painter.drawPoint(cx, cy)
+            
+        # Red + at center of screen
+        pen = QPen(Qt.GlobalColor.red, 2)
+        painter.setPen(pen)
+        cx = self.width() // 2
+        cy = self.height() // 2
+        sz = 10  # Size of the red + mark
+        painter.drawLine(cx - sz, cy, cx + sz, cy)
+        painter.drawLine(cx, cy - sz, cx, cy + sz)
+
+    def _near_first_point(self, pos: QPoint) -> bool:
+        if not self.path_points:
+            return False
+        p0 = self.path_points[0]
+        dx = pos.x() - p0.x()
+        dy = pos.y() - p0.y()
+        return (dx*dx + dy*dy) <= (self.close_snap_radius * self.close_snap_radius)
 
 
 # ======================================================================
@@ -487,7 +670,9 @@ class MainWindow(QMainWindow):
         self.pref_save_original = True
         
         self.pref_roi_enabled = False
-        self.pref_roi_points = []
+        self.pref_roi_points = []  # rectangle [x1,y1,x2,y2]
+        self.pref_roi_mode = 'rect'  # 'rect' or 'polygon'
+        self.pref_roi_polygon_points = []  # list of [x,y]
 
         self.load_settings()
 
@@ -525,7 +710,12 @@ class MainWindow(QMainWindow):
             self.video_worker.save_original_enabled = self.chk_save_original.isChecked()
             self.video_worker.play_sound_on_detect = self.chk_play_sound.isChecked()
             self.video_worker.roi_enabled = self.chk_enable_roi.isChecked()
-            if self.pref_roi_points:
+            # Apply ROI settings to worker
+            if self.pref_roi_mode == 'polygon' and self.pref_roi_polygon_points:
+                self.video_worker.roi_is_polygon = True
+                self.video_worker.roi_points = [(int(x), int(y)) for x, y in self.pref_roi_polygon_points]
+            elif self.pref_roi_points:
+                self.video_worker.roi_is_polygon = False
                 self.video_worker.roi_points = [
                     (self.pref_roi_points[0], self.pref_roi_points[1]),
                     (self.pref_roi_points[2], self.pref_roi_points[3])
@@ -536,7 +726,11 @@ class MainWindow(QMainWindow):
             self.video_worker.save_original_enabled = self.pref_save_original
             self.video_worker.play_sound_on_detect = self.pref_play_sound
             self.video_worker.roi_enabled = self.pref_roi_enabled
-            if self.pref_roi_points:
+            if self.pref_roi_mode == 'polygon' and self.pref_roi_polygon_points:
+                self.video_worker.roi_is_polygon = True
+                self.video_worker.roi_points = [(int(x), int(y)) for x, y in self.pref_roi_polygon_points]
+            elif self.pref_roi_points:
+                self.video_worker.roi_is_polygon = False
                 self.video_worker.roi_points = [
                     (self.pref_roi_points[0], self.pref_roi_points[1]),
                     (self.pref_roi_points[2], self.pref_roi_points[3])
@@ -616,6 +810,10 @@ class MainWindow(QMainWindow):
         self.btn_set_roi = QPushButton("กำหนดพื้นที่ (ROI)")
         self.btn_set_roi.clicked.connect(self.start_roi_selection)
         layout.addWidget(self.btn_set_roi)
+        # Pen ROI (Point-to-Point)
+        self.btn_set_roi_pen = QPushButton("Pen ROI (Point-to-Point)")
+        self.btn_set_roi_pen.clicked.connect(self.start_roi_freehand)
+        layout.addWidget(self.btn_set_roi_pen)
 
         self.chk_enable_detection = QCheckBox("เปิดใช้งานการตรวจจับ")
         self.chk_enable_detection.clicked.connect(self.on_enable_detection_changed)
@@ -652,6 +850,9 @@ class MainWindow(QMainWindow):
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_label.setStyleSheet("background-color: black; color: white;")
         self.video_label.roi_selected.connect(self.on_roi_selected)
+        # Connect freehand ROI path
+        if hasattr(self.video_label, 'roi_path_selected'):
+            self.video_label.roi_path_selected.connect(self.on_roi_path_selected)
         
         self.mask_label = QLabel("Mask"); self.mask_label.setAlignment(Qt.AlignmentFlag.AlignCenter); self.mask_label.setStyleSheet("background-color: black; color: white;")
         h.addWidget(self.video_label, 1); h.addWidget(self.mask_label, 1); v.addLayout(h)
@@ -769,6 +970,15 @@ class MainWindow(QMainWindow):
         self.video_label.start_selection()
         self.status_label.setText("สถานะ: คลิกและลากเพื่อกำหนดพื้นที่ (ROI)")
 
+    def start_roi_freehand(self):
+        # Enter point-to-point polygon (Pen) ROI drawing mode
+        try:
+            self.video_label.start_freehand()
+        except Exception:
+            # Fallback to rectangle if freehand not available
+            self.video_label.start_selection()
+        self.status_label.setText("Mode: Pen ROI — click to add points; right-click/double-click to finish")
+
     def play_alert_sound(self):
         if winsound and os.path.exists(SOUND_FILE):
             try:
@@ -842,12 +1052,23 @@ class MainWindow(QMainWindow):
         if result_frame is not None and original_frame is not None and session_path is not None:
             try:
                 ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-                detected_path = os.path.join(session_path, f"snap_{ts}_detected.png")
+                
+                # สร้างโฟลเดอร์ original และ detected
+                original_folder, detected_folder = ensure_detection_folders(session_path)
+                
+                # กำหนดชื่อไฟล์เดียวกันสำหรับทั้งสองโฟลเดอร์
+                filename = f"snap_{ts}.png"
+                
+                # บันทึกภาพที่มีการตรวจจับวัตถุในโฟลเดอร์ detected
+                detected_path = os.path.join(detected_folder, filename)
                 cv2.imwrite(detected_path, result_frame)
-                original_path = os.path.join(session_path, f"snap_{ts}_original.png")
+                
+                # บันทึกภาพต้นฉบับในโฟลเดอร์ original
+                original_path = os.path.join(original_folder, filename)
                 cv2.imwrite(original_path, original_frame)
+                
                 self.status_label.setText(f"สถานะ: บันทึกภาพนิ่งแล้ว")
-                print(f"[UI] Snapshot saved to {session_path}")
+                print(f"[UI] Snapshot saved to {session_path} (original/detected folders)")
             except Exception as e:
                 self.status_label.setText(f"สถานะ: บันทึกภาพนิ่งล้มเหลว")
                 print(f"[ERROR] Failed to save snapshot: {e}")
@@ -887,6 +1108,8 @@ class MainWindow(QMainWindow):
                     self.pref_play_sound = settings.get("play_sound", False)
                     self.pref_roi_enabled = settings.get("roi_enabled", False)
                     self.pref_roi_points = settings.get("roi_points", [])
+                    self.pref_roi_mode = settings.get("roi_mode", 'rect')
+                    self.pref_roi_polygon_points = settings.get("roi_polygon_points", [])
                     print(f"[SETTINGS] Settings loaded from {SETTINGS_FILE}")
         except Exception as e:
             print(f"[ERROR] Could not load settings: {e}")
@@ -905,6 +1128,8 @@ class MainWindow(QMainWindow):
                 "play_sound": self.pref_play_sound,
                 "roi_enabled": self.pref_roi_enabled,
                 "roi_points": self.pref_roi_points,
+                "roi_mode": self.pref_roi_mode,
+                "roi_polygon_points": self.pref_roi_polygon_points,
             }
             with open(SETTINGS_FILE, 'w') as f:
                 json.dump(settings, f, indent=4)
@@ -984,14 +1209,60 @@ class MainWindow(QMainWindow):
         final_x2 = min(w_orig, x2)
         final_y2 = min(h_orig, y2)
         
+        # Set rectangle ROI mode
+        self.pref_roi_mode = 'rect'
         self.pref_roi_points = [final_x1, final_y1, final_x2, final_y2]
+        self.pref_roi_polygon_points = []
         if self.video_worker:
+            self.video_worker.roi_is_polygon = False
             self.video_worker.roi_points = [(final_x1, final_y1), (final_x2, final_y2)]
         self.save_settings()
         
         print(f"[UI] ROI set to: {self.pref_roi_points}")
         self.status_label.setText("สถานะ: กำหนดพื้นที่เรียบร้อยแล้ว")
         
+        if self.current_source_type == 'image':
+            self.start_video_thread(self.current_source_type, self.current_source_path)
+
+    def on_roi_path_selected(self, points_in_label):
+        # Convert list[QPoint] from label coords to original frame coords
+        if self.video_worker is None or not points_in_label:
+            return
+        with self.video_worker.lock:
+            if self.video_worker.latest_original_frame is None:
+                return
+            h_orig, w_orig = self.video_worker.latest_original_frame.shape[:2]
+        label_size = self.video_label.size()
+        pixmap = self.video_label.pixmap()
+        if not pixmap or pixmap.isNull():
+            return
+        scaled_pixmap_size = pixmap.size().scaled(label_size, Qt.AspectRatioMode.KeepAspectRatio)
+        offset_x = (label_size.width() - scaled_pixmap_size.width()) / 2
+        offset_y = (label_size.height() - scaled_pixmap_size.height()) / 2
+        if scaled_pixmap_size.width() == 0 or scaled_pixmap_size.height() == 0:
+            return
+        scale_x = w_orig / scaled_pixmap_size.width()
+        scale_y = h_orig / scaled_pixmap_size.height()
+        mapped = []
+        for qp in points_in_label:
+            x = int((qp.x() - offset_x) * scale_x)
+            y = int((qp.y() - offset_y) * scale_y)
+            x = min(max(0, x), w_orig - 1)
+            y = min(max(0, y), h_orig - 1)
+            mapped.append([x, y])
+        # Close polygon if not closed
+        if mapped and mapped[0] != mapped[-1]:
+            mapped.append(mapped[0])
+        # Persist polygon ROI
+        self.pref_roi_mode = 'polygon'
+        self.pref_roi_polygon_points = mapped
+        self.pref_roi_points = []
+        if self.video_worker:
+            self.video_worker.roi_is_polygon = True
+            self.video_worker.roi_points = [(int(x), int(y)) for x, y in mapped]
+        self.save_settings()
+        print(f"[UI] Freehand ROI set with {len(mapped)} points")
+        self.status_label.setText("Mode: Freehand ROI set")
         if self.current_source_type == 'image':
             self.start_video_thread(self.current_source_type, self.current_source_path)
 
